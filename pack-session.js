@@ -21,6 +21,10 @@ const encFile = path.join(__dirname, 'session.enc');
 
 console.log('Archiving profile, .env, and resume PDF...');
 try {
+  const { resumePath } = require('./config');
+  const resumeFile = path.basename(resumePath);
+  console.log(`Including resume: ${resumeFile}`);
+
   // Archive essentials, excluding heavy browser caches
   const tarCmd = [
     'tar -czf temp_session.tar.gz',
@@ -31,7 +35,7 @@ try {
     '--exclude="*Safe Browsing*"',
     '.naukri-chrome-profile',
     '.env',
-    '*.pdf'
+    `"${resumeFile}"`
   ].join(' ');
 
   execSync(tarCmd, { cwd: __dirname, stdio: 'inherit' });
