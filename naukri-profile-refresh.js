@@ -140,6 +140,9 @@ async function googleLogin(ctx, page) {
     // -32000 bounds, which would otherwise make a restored window invisible.
     args: [
       "--disable-blink-features=AutomationControlled",
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
       // Hidden runs launch off-screen so the window never appears at all: hiding can
       // only happen after the window exists, which showed up as a 1-3s flash of
       // "about:blank - Google Chrome" on every hourly run. --show/--minimize/login
