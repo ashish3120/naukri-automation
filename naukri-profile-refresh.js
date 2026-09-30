@@ -133,7 +133,7 @@ async function googleLogin(ctx, page) {
 
 (async () => {
   const ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
-    channel: "chrome",
+    channel: process.env.BROWSER_CHANNEL || "chrome",
     headless: false, // naukri's Akamai bot-check blocks headless; minimised headed instead
     viewport: { width: 1280, height: 850 },
     // --window-position pins an on-screen origin; the profile still carries the old
@@ -145,7 +145,7 @@ async function googleLogin(ctx, page) {
       // "about:blank - Google Chrome" on every hourly run. --show/--minimize/login
       // need a real on-screen origin instead, and show-windows.js moves a hidden
       // window back into view before showing it.
-      SHOW_WINDOW || MINIMIZE_ONLY || LOGIN_MODE
+      SHOW_WINDOW || MINIMIZE_ONLY || LOGIN_MODE || process.platform !== "win32"
         ? "--window-position=0,0"
         : "--window-position=-32000,-32000",
     ],
