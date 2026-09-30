@@ -10,7 +10,12 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const passphrase = process.argv[2] || process.env.SESSION_SECRET;
+let passphrase = String(process.argv[2] || process.env.SESSION_SECRET || '').trim();
+if ((passphrase.startsWith('"') && passphrase.endsWith('"')) ||
+    (passphrase.startsWith("'") && passphrase.endsWith("'"))) {
+  passphrase = passphrase.slice(1, -1).trim();
+}
+
 if (!passphrase) {
   console.error('Error: Please provide a secret passphrase or set SESSION_SECRET:\n  node unpack-session.js <secret_passphrase>');
   process.exit(1);
@@ -23,6 +28,9 @@ if (!fs.existsSync(encFile)) {
   console.error(`Error: ${encFile} not found.`);
   process.exit(1);
 }
+
+const passHash = crypto.createHash('sha256').update(passphrase).digest('hex').slice(0, 8);
+console.log(`Using passphrase (length: ${passphrase.length}, hash: ${passHash})`);
 
 try {
   console.log('Decrypting session.enc...');
