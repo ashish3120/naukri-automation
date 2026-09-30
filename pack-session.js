@@ -31,7 +31,7 @@ try {
     '--exclude="*Safe Browsing*"',
     '.naukri-chrome-profile',
     '.env',
-    'cv_ashish_full_stack.pdf'
+    '*.pdf'
   ].join(' ');
 
   execSync(tarCmd, { cwd: __dirname, stdio: 'inherit' });
