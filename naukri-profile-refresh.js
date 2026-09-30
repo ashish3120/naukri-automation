@@ -190,14 +190,42 @@ async function googleLogin(ctx, page) {
       });
     }
 
-    // Resume headline widget → pencil icon → textarea → save
-    const editIcon = page.locator(
-      '#lazyResumeHead span.edit.icon, [data-ga-track*="resumeHeadline"] .edit',
-    );
-    await editIcon.first().waitFor({ timeout: 30000 });
-    await editIcon.first().click();
+    // Wait for the profile widget to render
+    await page
+      .locator(
+        '#lazyResumeHead, .quick-links, h1:has-text("Profile Summary"), .section-heading:has-text("Profile Summary")',
+      )
+      .first()
+      .waitFor({ timeout: 30000 });
 
-    const textarea = page.locator("#resumeHeadlineTxt");
+    // Detect standard Naukri profile headline vs Naukri Campus profile summary
+    const isCampus =
+      (await page
+        .locator(
+          'h1:has-text("Profile Summary"), .section-heading:has-text("Profile Summary"), .quick-links',
+        )
+        .count()
+        .catch(() => 0)) > 0;
+
+    let editIcon, textareaSelector, fieldName;
+    if (isCampus) {
+      fieldName = "profile summary";
+      const summaryHeader = page.locator('h1:has-text("Profile Summary"), .section-heading:has-text("Profile Summary")').first();
+      await summaryHeader.scrollIntoViewIfNeeded();
+      editIcon = summaryHeader.locator('.new-pencil, img[alt="pencil"]').first();
+      textareaSelector = 'textarea#summary, textarea[name="summary"]';
+    } else {
+      fieldName = "headline";
+      editIcon = page.locator(
+        '#lazyResumeHead span.edit.icon, [data-ga-track*="resumeHeadline"] .edit',
+      ).first();
+      textareaSelector = "#resumeHeadlineTxt";
+    }
+
+    await editIcon.waitFor({ timeout: 30000 });
+    await editIcon.click();
+
+    const textarea = page.locator(textareaSelector);
     await textarea.waitFor({ timeout: 15000 });
     const current = (await textarea.inputValue()).trimEnd();
     const dots = current.length - current.replace(/\.+$/, "").length;
@@ -215,13 +243,29 @@ async function googleLogin(ctx, page) {
       waitUntil: "domcontentloaded",
       timeout: 60000,
     });
-    await editIcon.first().waitFor({ timeout: 30000 });
-    await editIcon.first().click();
-    await textarea.waitFor({ timeout: 15000 });
-    const saved = (await textarea.inputValue()).trimEnd();
+    await page
+      .locator(
+        '#lazyResumeHead, .quick-links, h1:has-text("Profile Summary"), .section-heading:has-text("Profile Summary")',
+      )
+      .first()
+      .waitFor({ timeout: 30000 });
+    if (isCampus) {
+      const summaryHeader = page.locator('h1:has-text("Profile Summary"), .section-heading:has-text("Profile Summary")').first();
+      await summaryHeader.scrollIntoViewIfNeeded();
+      editIcon = summaryHeader.locator('.new-pencil, img[alt="pencil"]').first();
+    } else {
+      editIcon = page.locator(
+        '#lazyResumeHead span.edit.icon, [data-ga-track*="resumeHeadline"] .edit',
+      ).first();
+    }
+    await editIcon.waitFor({ timeout: 30000 });
+    await editIcon.click();
+    const verifyTextarea = page.locator(textareaSelector);
+    await verifyTextarea.waitFor({ timeout: 15000 });
+    const saved = (await verifyTextarea.inputValue()).trimEnd();
     if (saved !== updated) {
       throw new Error(
-        `save did not stick — server headline is "${saved.slice(0, 60)}", expected "${updated.slice(0, 60)}"`,
+        `save did not stick — server ${fieldName} is "${saved.slice(0, 60)}", expected "${updated.slice(0, 60)}"`,
       );
     }
 
@@ -251,7 +295,7 @@ async function googleLogin(ctx, page) {
       if (!fs.existsSync(RESUME_PATH))
         throw new Error(`resume file missing: ${RESUME_PATH}`);
       await page
-        .locator('#attachCV, input[type="file"]')
+        .locator('#attachCV, input[type="file"].upload-input, input[type="file"]')
         .first()
         .setInputFiles(RESUME_PATH);
       // verify from the server: reload and re-read the uploaded-on date. With
@@ -285,7 +329,7 @@ async function googleLogin(ctx, page) {
     }
 
     log(
-      `OK: headline ${dotMsg} (verified), ${cvMsg} → "${updated.slice(0, 60)}"`,
+      `OK: ${fieldName} ${dotMsg} (verified), ${cvMsg} → "${updated.slice(0, 60)}"`,
     );
   } catch (err) {
     const pages = ctx.pages();
@@ -295,7 +339,7 @@ async function googleLogin(ctx, page) {
         .catch(() => {});
     }
     log(
-      `ERROR: ${err.message.split("\n")[0]} (screenshots: naukri-refresh-error-*.png)`,
+      `ERROR: ${err.message.split("\n")[0]}\n${err.stack || ""}`,
     );
     process.exitCode = 1;
   } finally {
