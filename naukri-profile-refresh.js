@@ -153,6 +153,20 @@ async function googleLogin(ctx, page) {
         : "--window-position=-32000,-32000",
     ],
   });
+
+  // Restore cross-platform session cookies (e.g. when packed on Windows and run on Linux/CI/AWS)
+  const cookiesFile = path.join(__dirname, "session-cookies.json");
+  if (fs.existsSync(cookiesFile)) {
+    try {
+      const rawCookies = JSON.parse(fs.readFileSync(cookiesFile, "utf8"));
+      if (Array.isArray(rawCookies) && rawCookies.length > 0) {
+        await ctx.addCookies(rawCookies);
+        log(`Restored ${rawCookies.length} session cookies from session-cookies.json`);
+      }
+    } catch (e) {
+      log(`Warning: Failed restoring session cookies: ${e.message}`);
+    }
+  }
   // Hidden rather than parked at -32000,-32000: off-screen made the taskbar button
   // useless, because "restoring" put the window back where no monitor reaches.
   // Pass --show to keep it on screen, --minimize to leave it in the taskbar.

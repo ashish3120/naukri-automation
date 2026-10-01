@@ -9,6 +9,7 @@ const { execSync } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { chromium } = require('playwright-core');
 
 const passphrase = process.argv[2] || process.env.SESSION_SECRET;
 if (!passphrase) {
@@ -18,48 +19,72 @@ if (!passphrase) {
 
 const tarFile = path.join(__dirname, 'temp_session.tar.gz');
 const encFile = path.join(__dirname, 'session.enc');
+const cookiesFile = path.join(__dirname, 'session-cookies.json');
+const profileDir = path.join(__dirname, '.naukri-chrome-profile');
 
-console.log('Archiving profile, .env, and resume PDF...');
-try {
-  const { resumePath } = require('./config');
-  const resumeFile = path.basename(resumePath);
-  console.log(`Including resume: ${resumeFile}`);
+(async () => {
+  try {
+    const { resumePath } = require('./config');
+    const resumeFile = path.basename(resumePath);
+    console.log(`Including resume: ${resumeFile}`);
 
-  // Archive essentials, excluding heavy browser caches
-  const tarCmd = [
-    'tar -czf temp_session.tar.gz',
-    '--exclude="*Cache*"',
-    '--exclude="*BrowserMetrics*"',
-    '--exclude="*Crashpad*"',
-    '--exclude="*blob_storage*"',
-    '--exclude="*Safe Browsing*"',
-    '.naukri-chrome-profile',
-    '.env',
-    `"${resumeFile}"`
-  ].join(' ');
+    // Export cookies to cross-platform JSON because Windows DPAPI cannot be decrypted on Linux
+    if (fs.existsSync(profileDir)) {
+      console.log('Extracting session cookies from Chrome profile for cross-platform Linux compatibility...');
+      try {
+        const tempCtx = await chromium.launchPersistentContext(profileDir, {
+          channel: 'chrome',
+          headless: true,
+        });
+        const cookies = await tempCtx.cookies();
+        await tempCtx.close();
+        fs.writeFileSync(cookiesFile, JSON.stringify(cookies, null, 2));
+        console.log(`✅ Exported ${cookies.length} session cookies to session-cookies.json`);
+      } catch (err) {
+        console.warn(`Warning: Could not extract cookies with Playwright: ${err.message}`);
+      }
+    }
 
-  execSync(tarCmd, { cwd: __dirname, stdio: 'inherit' });
+    console.log('Archiving profile, cookies, .env, and resume PDF...');
+    // Archive essentials, excluding heavy browser caches
+    const tarCmd = [
+      'tar -czf temp_session.tar.gz',
+      '--exclude="*Cache*"',
+      '--exclude="*BrowserMetrics*"',
+      '--exclude="*Crashpad*"',
+      '--exclude="*blob_storage*"',
+      '--exclude="*Safe Browsing*"',
+      '.naukri-chrome-profile',
+      '.env',
+      'session-cookies.json',
+      `"${resumeFile}"`
+    ].join(' ');
 
-  console.log('Encrypting archive with AES-256-GCM...');
-  const tarBuffer = fs.readFileSync(tarFile);
+    execSync(tarCmd, { cwd: __dirname, stdio: 'inherit' });
 
-  const salt = crypto.randomBytes(16);
-  const iv = crypto.randomBytes(12);
-  const key = crypto.scryptSync(passphrase, salt, 32);
+    console.log('Encrypting archive with AES-256-GCM...');
+    const tarBuffer = fs.readFileSync(tarFile);
 
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-  const encrypted = Buffer.concat([cipher.update(tarBuffer), cipher.final()]);
-  const tag = cipher.getAuthTag();
+    const salt = crypto.randomBytes(16);
+    const iv = crypto.randomBytes(12);
+    const key = crypto.scryptSync(passphrase, salt, 32);
 
-  // Format: [16 bytes salt][12 bytes iv][16 bytes auth tag][ciphertext]
-  const finalBundle = Buffer.concat([salt, iv, tag, encrypted]);
-  fs.writeFileSync(encFile, finalBundle);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    const encrypted = Buffer.concat([cipher.update(tarBuffer), cipher.final()]);
+    const tag = cipher.getAuthTag();
 
-  fs.unlinkSync(tarFile);
-  console.log(`✅ Success! Created session.enc (${(finalBundle.length / 1024).toFixed(1)} KB)`);
-  console.log('\nYou can now commit session.enc to git, and add your passphrase to GitHub Secrets as SESSION_SECRET.');
-} catch (err) {
-  if (fs.existsSync(tarFile)) fs.unlinkSync(tarFile);
-  console.error('Failed to pack session:', err.message);
-  process.exit(1);
-}
+    // Format: [16 bytes salt][12 bytes iv][16 bytes auth tag][ciphertext]
+    const finalBundle = Buffer.concat([salt, iv, tag, encrypted]);
+    fs.writeFileSync(encFile, finalBundle);
+
+    if (fs.existsSync(tarFile)) fs.unlinkSync(tarFile);
+    if (fs.existsSync(cookiesFile)) fs.unlinkSync(cookiesFile);
+    console.log(`✅ Success! Created session.enc (${(finalBundle.length / 1024).toFixed(1)} KB)`);
+    console.log('\nYou can now commit session.enc to git, and add your passphrase to GitHub Secrets as SESSION_SECRET.');
+  } catch (err) {
+    if (fs.existsSync(tarFile)) fs.unlinkSync(tarFile);
+    if (fs.existsSync(cookiesFile)) fs.unlinkSync(cookiesFile);
+    console.error('Failed to pack session:', err.message);
+    process.exit(1);
+  }
+})();

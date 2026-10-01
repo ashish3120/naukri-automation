@@ -1,5 +1,7 @@
 # secrets & personal data
 .env
+session-cookies.json
+temp_session.tar.gz
 
 # runtime output
 *.log
