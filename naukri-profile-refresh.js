@@ -253,7 +253,13 @@ async function googleLogin(ctx, page) {
       .getByRole("button", { name: /^save$/i })
       .first()
       .click();
-    await textarea.waitFor({ state: "hidden", timeout: 15000 });
+    // Some profile types (e.g. Campus) keep the edit form open after saving,
+    // so the textarea never hides. Don't fail here — the page-reload + re-read
+    // below is the authoritative verification that the save actually stuck.
+    await textarea.waitFor({ state: "hidden", timeout: 15000 }).catch(() => {
+      // form didn't close; give the server a moment before we reload
+      return page.waitForTimeout(3000);
+    });
 
     // modal closing isn't proof the save stuck — reload from the server and re-read
     await page.goto(PROFILE_URL, {
