@@ -9,6 +9,23 @@ const nextHeadline = (current) => {
 };
 
 /**
+ * Naukri Campus profile summary: trailing dots are stripped by Naukri's
+ * specialChar server-side validation, so they never stick.
+ * Instead, cycle trailing Unicode en-spaces (U+2002): invisible to recruiters
+ * and not matched by Naukri's special-char filter.
+ * Cycles: "" → "\u2002" → "\u2002\u2002" → "" → ...
+ */
+const nextCampusSummary = (current) => {
+  // Strip any trailing whitespace (including our cycling en-spaces and regular spaces)
+  const cur = String(current).replace(/[\s\u2002]+$/, '');
+  // Count existing trailing en-spaces before the trim
+  const orig = String(current);
+  const enSpaces = orig.length - orig.replace(/\u2002+$/, '').length;
+  const next = enSpaces >= 2 ? 0 : enSpaces + 1;
+  return cur + '\u2002'.repeat(next);
+};
+
+/**
  * True when the profile's resume was uploaded today.
  * Parses the date that directly follows "Uploaded on" instead of testing today's
  * date against the whole surrounding block — the block also carries the profile's
@@ -22,4 +39,4 @@ const uploadedToday = (text, now = new Date()) => {
   return !isNaN(d) && d.toDateString() === now.toDateString();
 };
 
-module.exports = { nextHeadline, uploadedToday };
+module.exports = { nextHeadline, nextCampusSummary, uploadedToday };

@@ -16,7 +16,7 @@ const { chromium } = require("playwright-core");
 const path = require("path");
 const fs = require("fs");
 const { CREDS, naukriProfileUrl, resumePath } = require("./config"); // credentials + profile URL come from .env, never hard-coded
-const { nextHeadline, uploadedToday } = require("./naukri-helpers");
+const { nextHeadline, nextCampusSummary, uploadedToday } = require("./naukri-helpers");
 const {
   minimizeBrowserWindows,
   hideBrowserWindows,
@@ -246,20 +246,34 @@ async function googleLogin(ctx, page) {
     await textarea.waitFor({ timeout: 15000 });
     const current = (await textarea.inputValue()).trimEnd();
     const dots = current.length - current.replace(/\.+$/, "").length;
-    const updated = nextHeadline(current);
+    // Campus profile summary: Naukri's specialChar server-side validation strips trailing
+    // dots, so dots never stick. Use a trailing Unicode en-space (\u2002) instead —
+    // it's invisible to recruiters and not caught by special-char filters.
+    // Standard headline keeps dots since that field has no such restriction.
+    const updated = isCampus ? nextCampusSummary(current) : nextHeadline(current);
 
+    // Trigger React's change detection before clicking Save: fill alone is enough
+    // for Playwright to dispatch 'input', but an explicit click ensures focus.
+    await textarea.click();
     await textarea.fill(updated);
-    await page
-      .getByRole("button", { name: /^save$/i })
-      .first()
-      .click();
+
+    // Scope the Save button to the active editing section so we don't accidentally
+    // click a Save on a different form (e.g. CV upload) that happens to be open.
+    const saveBtn = page
+      .locator('button[type="submit"]:visible, button:has-text("Save"):visible')
+      .filter({ hasText: /^save$/i })
+      .first();
+    await saveBtn.waitFor({ timeout: 10000 });
+    await saveBtn.click();
+
     // Some profile types (e.g. Campus) keep the edit form open after saving,
     // so the textarea never hides. Don't fail here — the page-reload + re-read
     // below is the authoritative verification that the save actually stuck.
-    await textarea.waitFor({ state: "hidden", timeout: 15000 }).catch(() => {
-      // form didn't close; give the server a moment before we reload
-      return page.waitForTimeout(3000);
-    });
+    // Wait up to 15s for the form to close; if it doesn't, pause 8s to let
+    // the server finish processing before we reload.
+    await textarea.waitFor({ state: "hidden", timeout: 15000 }).catch(() =>
+      page.waitForTimeout(8000)
+    );
 
     // modal closing isn't proof the save stuck — reload from the server and re-read
     await page.goto(PROFILE_URL, {
@@ -286,13 +300,20 @@ async function googleLogin(ctx, page) {
     const verifyTextarea = page.locator(textareaSelector);
     await verifyTextarea.waitFor({ timeout: 15000 });
     const saved = (await verifyTextarea.inputValue()).trimEnd();
+    // Trim trailing Unicode whitespace for the comparison so that invisible cycling
+    // characters (en-space \u2002) don't confuse the log output length.
     if (saved !== updated) {
       throw new Error(
-        `save did not stick — server ${fieldName} is "${saved.slice(0, 60)}", expected "${updated.slice(0, 60)}"`,
+        `save did not stick — server ${fieldName} is "${saved.slice(0, 80)}", expected "${updated.slice(0, 80)}"`,
       );
     }
 
-    const dotMsg = dots >= 2 ? "dots cleared" : `dot ${dots + 1} added`;
+    // Log message: for Campus, we cycle en-spaces (\u2002) not dots.
+    const cycleChar = isCampus ? 'en-space' : 'dot';
+    const cycleCount = isCampus
+      ? (updated.length - updated.replace(/\u2002+$/, '').length)
+      : (updated.length - updated.replace(/\.+$/, '').length);
+    const dotMsg = cycleCount === 0 ? `${cycleChar}s cleared` : `${cycleChar} ${cycleCount} added`;
 
     // ---- resume re-upload: only when the profile's "Uploaded on" date isn't today ----
     let cvMsg = "cv up-to-date";
