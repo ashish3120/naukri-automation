@@ -9,20 +9,18 @@ const nextHeadline = (current) => {
 };
 
 /**
- * Naukri Campus profile summary: trailing dots are stripped by Naukri's
- * specialChar server-side validation, so they never stick.
- * Instead, cycle trailing Unicode en-spaces (U+2002): invisible to recruiters
- * and not matched by Naukri's special-char filter.
- * Cycles: "" → "\u2002" → "\u2002\u2002" → "" → ...
+ * Naukri Campus profile summary: cycle trailing dots, stripping any invalid
+ * characters or question marks from past encoding attempts.
+ * Cycles: "" → "." → ".." → "" → ...
  */
 const nextCampusSummary = (current) => {
-  // Strip any trailing whitespace (including our cycling en-spaces and regular spaces)
-  const cur = String(current).replace(/[\s\u2002]+$/, '');
-  // Count existing trailing en-spaces before the trim
-  const orig = String(current);
-  const enSpaces = orig.length - orig.replace(/\u2002+$/, '').length;
-  const next = enSpaces >= 2 ? 0 : enSpaces + 1;
-  return cur + '\u2002'.repeat(next);
+  // Strip trailing question marks (from old non-ASCII encoding attempts), dots, and spaces
+  const base = String(current).replace(/[?\s\u2002.]+$/, '');
+  const cur = String(current).trimEnd();
+  // If current ended with dots, count how many
+  const dots = cur.length - cur.replace(/\.+$/, '').length;
+  const next = dots >= 2 ? 0 : dots + 1;
+  return base + '.'.repeat(next);
 };
 
 /**
