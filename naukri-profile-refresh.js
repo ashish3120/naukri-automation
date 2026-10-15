@@ -250,6 +250,8 @@ async function googleLogin(ctx, page) {
 
     await textarea.click();
     await textarea.fill(updated);
+    await textarea.dispatchEvent("input");
+    await textarea.dispatchEvent("change");
 
     // Save button inside the form (#submit-btn or button with text Save)
     const saveBtn = textarea.locator('xpath=ancestor::form//button[@id="submit-btn" or contains(translate(text(), "SAVE", "save"), "save")]').first();
